@@ -1,29 +1,34 @@
-import os
+import os 
 from pydantic import BaseModel
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from tools import search_tool, wikipedia_query, save_tool
+from tools import search_tool, wikipedia_query, arxiv_tool
+import streamlit as st
 
+# API Key
 gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-class ResponenseModel(BaseModel):
+# Response Model
+class ResponseModel(BaseModel):
     topic: str
     summary: str
     sources: list[str]
     tools_used: list[str]
 
+# LLM & Parser
 llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key=gemini_api_key)
-parser = PydanticOutputParser(pydantic_object=ResponenseModel)
+parser = PydanticOutputParser(pydantic_object=ResponseModel)
 
-promt = ChatPromptTemplate.from_messages(
+# Prompt Template
+prompt = ChatPromptTemplate.from_messages(
     [
         (
             "system",
             """
             You are a research assistant that will help generate a research paper.
-            Answer the user query and use neccessary tools. 
+            Answer the user query and use necessary tools.
             Wrap the output in this format and provide no other text\n{format_instructions}
             """,
         ),
@@ -33,20 +38,44 @@ promt = ChatPromptTemplate.from_messages(
     ]
 ).partial(format_instructions=parser.get_format_instructions())
 
-tools = [search_tool, wikipedia_query, save_tool]
-agents = create_tool_calling_agent(
-    llm=llm,
-    prompt=promt,
-    tools=tools,
-)
+# Tools & Agent
+tools = [search_tool, wikipedia_query, arxiv_tool]
+agents = create_tool_calling_agent(llm=llm, prompt=prompt, tools=tools)
 
+# Executor
 agent_executor = AgentExecutor(agent=agents, tools=tools, verbose=True)
-query = input("What can I help you research? ")
-raw_response = agent_executor.invoke({"query": query})
-print(raw_response)
 
-try:
-    structured_response = parser.parse(raw_response.get("output")[0]["text"])
-    print(structured_response)
-except Exception as e:
-    print("Error parsing response", e, "Raw Response - ", raw_response)
+# Streamlit UI
+st.set_page_config(page_title="Research Agent", page_icon="🧠")
+st.title("🧠 Research Agent")
+
+query = st.text_input("What can I help you research? ")
+
+if st.button("Research", use_container_width=True):
+    with st.spinner("Processing..."):
+        raw_response = agent_executor.invoke({"query": query})
+        
+        print("Raw Response:", raw_response)  # Debugging
+        
+        try:
+            structured_response = parser.parse(raw_response.get("output", ""))
+            st.subheader(structured_response.topic)
+            st.write(structured_response.summary)
+            with st.expander("Sources"):
+                for source in structured_response.sources:
+                    st.write(source)
+            with st.expander("Tools Used"):
+                for tool in structured_response.tools_used:
+                    st.write(tool)
+        except Exception as e:
+            st.error("Error parsing response:", e)
+            st.error("Raw Response - ", raw_response)
+            
+        if structured_response:
+            st.download_button(
+                "Download Paper",
+                structured_response.summary,
+                file_name=f"{structured_response.topic}.txt",
+                mime="text/plain",
+                use_container_width=True,
+            )
