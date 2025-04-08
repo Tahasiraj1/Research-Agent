@@ -4,7 +4,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain.agents import create_tool_calling_agent, AgentExecutor
-from tools import search_tool, wikipedia_query, arxiv_tool
+from tools import search_tool, wikipedia_query, arxiv_tool, semantic_scholar_tool
 import streamlit as st
 
 # API Key
@@ -18,7 +18,7 @@ class ResponseModel(BaseModel):
     tools_used: list[str]
 
 # LLM & Parser
-llm = ChatGoogleGenerativeAI(model="gemini-2.0-flash", api_key=gemini_api_key)
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro", api_key=gemini_api_key)
 parser = PydanticOutputParser(pydantic_object=ResponseModel)
 
 # Prompt Template
@@ -27,8 +27,9 @@ prompt = ChatPromptTemplate.from_messages(
         (
             "system",
             """
-            You are a research assistant that will help generate a research paper.
-            Answer the user query and use necessary tools.
+            You are a highly knowledgeable research assistant specializing in generating comprehensive, detailed, and well-structured research papers.  
+            Your response should be at least **500 words**, including **key findings, methodologies, references, and citations**.  
+            Use all necessary tools and provide an in-depth analysis. Do NOT summarize excessively.
             Wrap the output in this format and provide no other text\n{format_instructions}
             """,
         ),
@@ -39,7 +40,7 @@ prompt = ChatPromptTemplate.from_messages(
 ).partial(format_instructions=parser.get_format_instructions())
 
 # Tools & Agent
-tools = [search_tool, wikipedia_query, arxiv_tool]
+tools = [search_tool, wikipedia_query, arxiv_tool, semantic_scholar_tool]
 agents = create_tool_calling_agent(llm=llm, prompt=prompt, tools=tools)
 
 # Executor
